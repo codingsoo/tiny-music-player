@@ -30,9 +30,11 @@ class Notifications {
    */
   Notification notification;
   Notification.Builder builder;
+  private boolean hasMultipleTracks;
 
   public Notifications(Service service) {
     this.service = service;
+    this.hasMultipleTracks = false;
   }
 
   public void create() {
@@ -53,8 +55,16 @@ class Notifications {
    * @param title           title of notification (title of file)
    * @param playPauseIntent pending intent for pause/play audio
    * @param killIntent      pending intent for closing the service
+   * @param loopIntent      pending intent for toggling loop
+   * @param shuffleIntent   pending intent for toggling shuffle
+   * @param skipPrevIntent  pending intent for skipping to previous track
+   * @param skipNextIntent  pending intent for skipping to next track
+   * @param hasMultipleTracks whether there are multiple tracks in playlist
    */
-  void setupNotificationBuilder(String title, PendingIntent playPauseIntent, PendingIntent killIntent, PendingIntent loopIntent) {
+  void setupNotificationBuilder(String title, PendingIntent playPauseIntent, PendingIntent killIntent, 
+                                 PendingIntent loopIntent, PendingIntent shuffleIntent,
+                                 PendingIntent skipPrevIntent, PendingIntent skipNextIntent,
+                                 boolean hasMultipleTracks) {
     if (Build.VERSION.SDK_INT < 11) return;
 
     // create builder instance
@@ -74,7 +84,16 @@ class Notifications {
     builder.setVibrate(null);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
       builder.setContentIntent(playPauseIntent);
+      // Add skip previous button if multiple tracks
+      if (hasMultipleTracks) {
+        builder.addAction(0, "prev", skipPrevIntent);
+      }
       builder.addAction(0, "loop", loopIntent);
+      builder.addAction(0, "shuffle", shuffleIntent);
+      // Add skip next button if multiple tracks
+      if (hasMultipleTracks) {
+        builder.addAction(0, "next", skipNextIntent);
+      }
       builder.addAction(0, TAP_TO_CLOSE, killIntent);
     } else {
       builder.setContentText(TAP_TO_CLOSE);
@@ -85,13 +104,16 @@ class Notifications {
   /**
    * Switch playback state
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     // no notification controls < Jelly bean
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
       var playbackText = "Tap to ";
       playbackText += (playing) ? "pause" : "play";
       if (looping) {
         playbackText += " | looping";
+      }
+      if (shuffling) {
+        playbackText += " | shuffle";
       }
       builder.setContentText(playbackText);
       buildNotification();
@@ -166,7 +188,8 @@ class Notifications {
   /**
    * create and start playback control notification
    */
-  void getNotification(final Uri uri) {
+  void getNotification(final Uri uri, boolean hasMultipleTracks) {
+    this.hasMultipleTracks = hasMultipleTracks;
 
     /* setup notification variable */
     var title = new File(uri.getPath()).getName();
@@ -175,8 +198,12 @@ class Notifications {
     var killIntent = genIntent(1, Launcher.KILL);
     var playPauseIntent = genIntent(2, Launcher.PLAY_PAUSE);
     var loopIntent = genIntent(3, Launcher.LOOP);
+    var shuffleIntent = genIntent(4, Launcher.SHUFFLE);
+    var skipPrevIntent = genIntent(5, Launcher.SKIP_PREV);
+    var skipNextIntent = genIntent(6, Launcher.SKIP_NEXT);
 
-    setupNotificationBuilder(title, playPauseIntent, killIntent, loopIntent);
+    setupNotificationBuilder(title, playPauseIntent, killIntent, loopIntent, shuffleIntent, 
+                             skipPrevIntent, skipNextIntent, hasMultipleTracks);
     genNotification();
     setupNotification(title, killIntent);
 

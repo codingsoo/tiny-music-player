@@ -15,6 +15,7 @@ public class Service extends android.app.Service {
 
   final HWListener hwListener;
   final Notifications notifications;
+  final PlaylistManager playlistManager;
   /**
    * audio playing logic class
    */
@@ -23,6 +24,7 @@ public class Service extends android.app.Service {
   public Service() {
     hwListener = new HWListener(this);
     notifications = new Notifications(this);
+    playlistManager = new PlaylistManager(this);
   }
 
   /**
@@ -51,33 +53,50 @@ public class Service extends android.app.Service {
   public void onStart(final Intent intent, final int startId) {
     /* check if called from self */
     if (intent.getAction() == null) {
-      var isPLaying = audioPlayer.isPlaying();
-      var isLooping = audioPlayer.isLooping();
+      var isPlaying = audioPlayer != null && audioPlayer.isPlaying();
+      var isLooping = audioPlayer != null && audioPlayer.isLooping();
+      var isShuffling = playlistManager.isShuffleEnabled();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(audioPlayer != null ? !isPlaying : false, isLooping, isShuffling);
+        case Launcher.PLAY -> setState(true, isLooping, isShuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, isShuffling);
+        case Launcher.LOOP -> setState(isPlaying, !isLooping, isShuffling);
+        case Launcher.SHUFFLE -> setState(isPlaying, isLooping, !isShuffling);
+        case Launcher.SKIP_NEXT -> skipToNext();
+        case Launcher.SKIP_PREV -> skipToPrevious();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
     } else {
       switch (intent.getAction()) {
-        case Intent.ACTION_VIEW -> setAudio(intent.getData());
-        case Intent.ACTION_SEND -> setAudio(intent.getParcelableExtra(Intent.EXTRA_STREAM));
+        case Intent.ACTION_VIEW -> initializeAndPlay(intent.getData());
+        case Intent.ACTION_SEND -> initializeAndPlay(intent.getParcelableExtra(Intent.EXTRA_STREAM));
       }
     }
   }
 
+  /**
+   * Initialize playlist and start playing
+   */
+  void initializeAndPlay(final Uri audioLocation) {
+    playlistManager.initializePlaylist(audioLocation);
+    setAudio(playlistManager.getCurrentTrack());
+  }
+
   void setAudio(final Uri audioLocation) {
     try {
+      // Stop current playback if any
+      if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
+
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
       audioPlayer.start();
 
       /* create notification for playback control */
-      notifications.getNotification(audioLocation);
+      notifications.getNotification(audioLocation, playlistManager.hasMultipleTracks());
 
       /* start service as foreground */
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ECLAIR)
@@ -95,12 +114,48 @@ public class Service extends android.app.Service {
   }
 
   /**
+   * Skip to the next track
+   */
+  void skipToNext() {
+    Uri nextTrack = playlistManager.getNextTrack();
+    if (nextTrack != null) {
+      setAudio(nextTrack);
+    }
+  }
+
+  /**
+   * Skip to the previous track
+   */
+  void skipToPrevious() {
+    Uri prevTrack = playlistManager.getPreviousTrack();
+    if (prevTrack != null) {
+      setAudio(prevTrack);
+    }
+  }
+
+  /**
+   * Called when current track completes
+   */
+  void onTrackComplete() {
+    if (playlistManager.isShuffleEnabled() || playlistManager.hasMultipleTracks()) {
+      // In shuffle mode or with multiple tracks, play next
+      skipToNext();
+    } else {
+      // Single track, no shuffle - stop
+      stopSelf();
+    }
+  }
+
+  /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    playlistManager.setShuffleEnabled(shuffling);
+    if (audioPlayer != null) {
+      audioPlayer.setState(playing, looping);
+    }
     hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+    notifications.setState(playing, looping, shuffling);
   }
 
   /**
@@ -121,7 +176,7 @@ public class Service extends android.app.Service {
     notifications.destroy();
     hwListener.destroy();
     /* interrupt audio playback logic */
-    if (!audioPlayer.isInterrupted()) audioPlayer.interrupt();
+    if (audioPlayer != null && !audioPlayer.isInterrupted()) audioPlayer.interrupt();
 
     super.onDestroy();
   }
