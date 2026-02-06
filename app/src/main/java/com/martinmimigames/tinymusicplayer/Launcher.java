@@ -20,8 +20,10 @@ public class Launcher extends Activity {
   static final byte KILL = 2;
   static final byte PLAY = 3;
   static final byte PAUSE = 4;
-
   static final byte LOOP = 5;
+  static final byte SHUFFLE = 6;
+  static final byte NEXT = 7;
+  static final byte PREVIOUS = 8;
 
   private static final int REQUEST_CODE = 3216487;
 
@@ -30,7 +32,8 @@ public class Launcher extends Activity {
     super.onCreate(savedInstanceState);
 
     if (!Intent.ACTION_VIEW.equals(getIntent().getAction())
-      && !Intent.ACTION_SEND.equals(getIntent().getAction())) {
+      && !Intent.ACTION_SEND.equals(getIntent().getAction())
+      && !Intent.ACTION_SEND_MULTIPLE.equals(getIntent().getAction())) {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         this.getPackageManager()
           .checkPermission(

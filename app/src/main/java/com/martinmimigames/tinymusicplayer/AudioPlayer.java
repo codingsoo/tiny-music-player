@@ -53,7 +53,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.setState(true, false, service.playlist.isShuffleEnabled());
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -95,11 +95,11 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
-   * release resource when playback finished
+   * Called when playback finished
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    service.onTrackComplete();
   }
 
   /**
