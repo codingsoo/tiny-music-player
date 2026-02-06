@@ -11,7 +11,10 @@ import java.io.IOException;
 class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
 
   private final Service service;
-  private final MediaPlayer mediaPlayer;
+  private MediaPlayer mediaPlayer;
+  private Uri currentUri;
+  private boolean isLooping;
+  private boolean isPrepared;
 
   /**
    * Initiate an audio player, throws exceptions if failed.
@@ -25,6 +28,17 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   public AudioPlayer(Service service, Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     this.service = service;
+    this.currentUri = audioLocation;
+    this.isLooping = false;
+    this.isPrepared = false;
+    
+    initializeMediaPlayer(audioLocation);
+  }
+
+  /**
+   * Initialize or reinitialize the media player with a new audio source
+   */
+  private void initializeMediaPlayer(Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     /* initiate new audio player */
     mediaPlayer = new MediaPlayer();
 
@@ -53,7 +67,8 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      isPrepared = true;
+      service.setState(true, isLooping, service.isShuffleEnabled());
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -62,21 +77,59 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
+   * Play a new track
+   *
+   * @param audioLocation the URI of the new track
+   * @return true if successful, false otherwise
+   */
+  public boolean playNewTrack(Uri audioLocation) {
+    if (audioLocation == null) return false;
+    
+    try {
+      // Release old media player
+      if (mediaPlayer != null) {
+        if (isPrepared) {
+          mediaPlayer.stop();
+        }
+        mediaPlayer.release();
+      }
+      
+      isPrepared = false;
+      currentUri = audioLocation;
+      
+      // Initialize with new track
+      initializeMediaPlayer(audioLocation);
+      
+      // Prepare and start
+      mediaPlayer.prepare();
+      isPrepared = true;
+      mediaPlayer.start();
+      
+      return true;
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  /**
+   * Get the current track URI
+   */
+  public Uri getCurrentUri() {
+    return currentUri;
+  }
+
+  /**
    * check if audio is playing
    */
   public boolean isPlaying() {
-    return mediaPlayer.isPlaying();
+    return mediaPlayer != null && mediaPlayer.isPlaying();
   }
 
   /**
    * check if audio is looping, always false on < android cupcake (sdk 3)
    */
   public boolean isLooping() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CUPCAKE) {
-      return mediaPlayer.isLooping();
-    } else {
-      return false;
-    }
+    return isLooping;
   }
 
   /**
@@ -86,12 +139,15 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    * @param looping is audio looping
    */
   void setState(boolean playing, boolean looping) {
+    this.isLooping = looping;
     if (playing) {
       mediaPlayer.start();
     } else {
       mediaPlayer.pause();
     }
-    mediaPlayer.setLooping(looping);
+    // Note: We don't use MediaPlayer's built-in looping anymore
+    // because we handle it ourselves to support playlist looping
+    mediaPlayer.setLooping(false);
   }
 
   /**
@@ -99,7 +155,8 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    // Notify service that track completed - service will decide what to do
+    service.onTrackCompleted();
   }
 
   /**
@@ -107,7 +164,9 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void interrupt() {
-    mediaPlayer.release();
+    if (mediaPlayer != null) {
+      mediaPlayer.release();
+    }
     super.interrupt();
   }
 }
