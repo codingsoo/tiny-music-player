@@ -53,7 +53,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.setState(true, false, service.isShuffleEnabled());
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -95,11 +95,15 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
-   * release resource when playback finished
+   * Called when playback finishes.
+   * If looping is enabled, MediaPlayer handles it automatically.
+   * Otherwise, notify service to handle track completion (for shuffle/sequential playback).
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    // If looping is enabled, MediaPlayer will restart automatically
+    // This callback is only called when looping is disabled
+    service.onTrackCompleted();
   }
 
   /**
