@@ -2,11 +2,15 @@ package com.martinmimigames.tinymusicplayer;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+
+import java.util.ArrayList;
 
 /**
  * activity for controlling the playback by invoking different logics based on incoming intents
@@ -22,6 +26,9 @@ public class Launcher extends Activity {
   static final byte PAUSE = 4;
 
   static final byte LOOP = 5;
+  static final byte SHUFFLE = 6;
+  static final byte NEXT = 7;
+  static final byte PREVIOUS = 8;
 
   private static final int REQUEST_CODE = 3216487;
 
@@ -47,6 +54,9 @@ public class Launcher extends Activity {
       /* request a file from the system */
       var intent = new Intent(Intent.ACTION_GET_CONTENT);
       intent.setType("audio/*"); // intent type to filter application based on your requirement
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); // allow multiple file selection
+      }
       startActivityForResult(intent, REQUEST_CODE);
       return;
     }
@@ -80,9 +90,27 @@ public class Launcher extends Activity {
   protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
     /* if result unusable, discard */
     if (requestCode == REQUEST_CODE && resultCode == Activity.RESULT_OK) {
-      /* redirect to service */
-      intent.setAction(Intent.ACTION_VIEW);
-      onIntent(intent);
+      /* Handle multiple file selection */
+      ArrayList<Uri> uris = new ArrayList<>();
+      
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN && intent.getClipData() != null) {
+        ClipData clipData = intent.getClipData();
+        for (int i = 0; i < clipData.getItemCount(); i++) {
+          uris.add(clipData.getItemAt(i).getUri());
+        }
+      } else if (intent.getData() != null) {
+        uris.add(intent.getData());
+      }
+      
+      if (!uris.isEmpty()) {
+        /* redirect to service with playlist */
+        Intent serviceIntent = new Intent(this, Service.class);
+        serviceIntent.setAction(Intent.ACTION_VIEW);
+        serviceIntent.putParcelableArrayListExtra("playlist", uris);
+        stopService(serviceIntent);
+        startService(serviceIntent);
+      }
+      finish();
       return;
     }
     finish();
