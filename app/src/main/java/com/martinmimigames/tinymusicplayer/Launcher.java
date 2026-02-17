@@ -22,6 +22,8 @@ public class Launcher extends Activity {
   static final byte PAUSE = 4;
 
   static final byte LOOP = 5;
+  static final byte SHUFFLE = 6;
+  static final byte NEXT = 7;
 
   private static final int REQUEST_CODE = 3216487;
 

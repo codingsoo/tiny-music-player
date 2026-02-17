@@ -53,7 +53,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.onAudioReady();
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -99,7 +99,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    service.onTrackCompleted();
   }
 
   /**
