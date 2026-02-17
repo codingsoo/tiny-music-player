@@ -113,6 +113,10 @@ You can submit issues the following ways:
 
 ## Latest Versions
 
+- v1.4
+  - Added Shuffle/Random playback mode
+  - Added Next track button for shuffle mode
+  - Hardware media button support for next track
 - v1.3
   - Added Loop function (accessible via the notifications)
   - Cleaner Notification Category descriptions
@@ -168,7 +172,7 @@ Official Website at [https://martinmimigames.github.io](https://martinmimigames.
 
 ### Last update of README
 
-Date : 2025-04-09 yyyy-mm-dd
+Date : 2026-02-17 yyyy-mm-dd
 
 ### Important
 

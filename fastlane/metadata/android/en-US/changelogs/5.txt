@@ -1,0 +1,3 @@
+- Added Shuffle/Random playback mode
+- Added Next track button for shuffle mode
+- Hardware media button support for next track
