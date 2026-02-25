@@ -6,12 +6,23 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Random;
 
 class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
 
+  private static final String[] AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus",
+    ".mid", ".midi", ".amr", ".3gp", ".mp4", ".mkv", ".webm"
+  };
+
   private final Service service;
   private final MediaPlayer mediaPlayer;
+  private final Uri audioLocation;
+  private boolean shuffling;
 
   /**
    * Initiate an audio player, throws exceptions if failed.
@@ -25,6 +36,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   public AudioPlayer(Service service, Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     this.service = service;
+    this.audioLocation = audioLocation;
     /* initiate new audio player */
     mediaPlayer = new MediaPlayer();
 
@@ -53,7 +65,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.setState(true, false, service.isShuffleEnabled());
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -80,18 +92,27 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
+   * check if shuffle is enabled
+   */
+  public boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
    * set player state
    *
-   * @param playing is audio playing
-   * @param looping is audio looping
+   * @param playing  is audio playing
+   * @param looping  is audio looping
+   * @param shuffling is shuffle enabled
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     if (playing) {
       mediaPlayer.start();
     } else {
       mediaPlayer.pause();
     }
     mediaPlayer.setLooping(looping);
+    this.shuffling = shuffling;
   }
 
   /**
@@ -99,7 +120,48 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
+    if (shuffling) {
+      try {
+        var path = audioLocation.getPath();
+        if (path != null) {
+          var currentFile = new File(path);
+          var parentDir = currentFile.getParentFile();
+          if (parentDir != null) {
+            var files = parentDir.listFiles();
+            if (files != null) {
+              var siblings = new ArrayList<File>();
+              for (var file : files) {
+                if (file.isFile() && !file.equals(currentFile) && isAudioFile(file.getName())) {
+                  siblings.add(file);
+                }
+              }
+              if (!siblings.isEmpty()) {
+                var random = new Random();
+                var nextFile = siblings.get(random.nextInt(siblings.size()));
+                service.playNextRandom(Uri.fromFile(nextFile));
+                return;
+              }
+            }
+          }
+        }
+      } catch (Exception e) {
+        // fall through to stopSelf
+      }
+    }
     service.stopSelf();
+  }
+
+  /**
+   * check if file has an audio extension
+   */
+  private static boolean isAudioFile(String name) {
+    var lowerName = name.toLowerCase(Locale.ROOT);
+    for (var ext : AUDIO_EXTENSIONS) {
+      if (lowerName.endsWith(ext)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
