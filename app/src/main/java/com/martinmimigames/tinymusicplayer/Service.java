@@ -106,6 +106,13 @@ public class Service extends android.app.Service {
   }
 
   /**
+   * check if shuffle mode is active
+   */
+  boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
    * Switch to player component state
    */
   void setState(boolean playing, boolean looping, boolean shuffling) {
