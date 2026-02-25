@@ -6,7 +6,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,6 +22,9 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+
+  private Uri currentAudioUri;
+  private boolean shuffling = false;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -51,14 +57,17 @@ public class Service extends android.app.Service {
   public void onStart(final Intent intent, final int startId) {
     /* check if called from self */
     if (intent.getAction() == null) {
+      if (audioPlayer == null) return;
       var isPLaying = audioPlayer.isPlaying();
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, shuffling);
+        case Launcher.PLAY -> setState(true, isLooping, shuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, shuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, shuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !shuffling);
+        case Launcher.SKIP -> playNextRandom();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -72,6 +81,8 @@ public class Service extends android.app.Service {
 
   void setAudio(final Uri audioLocation) {
     try {
+      this.currentAudioUri = audioLocation;
+
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
       audioPlayer.start();
@@ -97,10 +108,70 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Called when a track finishes playing.
+   * If shuffling, plays the next random track; otherwise stops.
+   */
+  void onTrackCompleted() {
+    if (shuffling) {
+      playNextRandom();
+    } else {
+      stopSelf();
+    }
+  }
+
+  /**
+   * Scan the parent directory for sibling audio files and return a random one.
+   */
+  private Uri getRandomSiblingAudio() {
+    if (currentAudioUri == null) return null;
+    String path = currentAudioUri.getPath();
+    if (path == null) return null;
+    File currentFile = new File(path);
+    File parentDir = currentFile.getParentFile();
+    if (parentDir == null || !parentDir.isDirectory()) return null;
+
+    String[] audioExtensions = {".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma", ".opus", ".mid", ".midi"};
+    File[] files = parentDir.listFiles();
+    if (files == null) return null;
+
+    var audioFiles = new ArrayList<File>();
+    for (File f : files) {
+      if (f.isFile() && !f.equals(currentFile)) {
+        String name = f.getName().toLowerCase();
+        for (String ext : audioExtensions) {
+          if (name.endsWith(ext)) {
+            audioFiles.add(f);
+            break;
+          }
+        }
+      }
+    }
+
+    if (audioFiles.isEmpty()) return null;
+    return Uri.fromFile(audioFiles.get(new Random().nextInt(audioFiles.size())));
+  }
+
+  /**
+   * Play a random sibling audio file, or stop if none found.
+   */
+  void playNextRandom() {
+    Uri next = getRandomSiblingAudio();
+    if (next != null) {
+      if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
+      setAudio(next);
+    } else {
+      stopSelf();
+    }
   }
 
   /**
@@ -121,7 +192,7 @@ public class Service extends android.app.Service {
     notifications.destroy();
     hwListener.destroy();
     /* interrupt audio playback logic */
-    if (!audioPlayer.isInterrupted()) audioPlayer.interrupt();
+    if (audioPlayer != null && !audioPlayer.isInterrupted()) audioPlayer.interrupt();
 
     super.onDestroy();
   }
