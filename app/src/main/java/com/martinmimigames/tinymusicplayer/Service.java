@@ -30,6 +30,13 @@ public class Service extends android.app.Service {
   private boolean shuffling = false;
   private Uri currentAudioLocation;
 
+  /**
+   * check if shuffle mode is enabled
+   */
+  boolean isShuffling() {
+    return shuffling;
+  }
+
   public Service() {
     hwListener = new HWListener(this);
     notifications = new Notifications(this);
@@ -85,6 +92,11 @@ public class Service extends android.app.Service {
   void setAudio(final Uri audioLocation) {
     try {
       this.currentAudioLocation = audioLocation;
+
+      /* release previous audio player if exists */
+      if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
 
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
