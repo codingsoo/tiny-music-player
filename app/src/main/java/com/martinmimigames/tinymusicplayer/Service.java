@@ -1,12 +1,16 @@
 package com.martinmimigames.tinymusicplayer;
 
 import android.annotation.TargetApi;
+import android.content.ContentUris;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.MediaStore;
 
 import java.io.IOException;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,6 +23,10 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  /**
+   * shuffle state, persisted across track changes
+   */
+  boolean isShuffling;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -55,10 +63,11 @@ public class Service extends android.app.Service {
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, isShuffling);
+        case Launcher.PLAY -> setState(true, isLooping, isShuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, isShuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, isShuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !isShuffling);
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -97,10 +106,39 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.isShuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Play a random audio track from the device's MediaStore
+   */
+  void playRandomTrack() {
+    Cursor cursor = null;
+    try {
+      cursor = getContentResolver().query(
+        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+        new String[]{MediaStore.Audio.Media._ID},
+        null, null, null
+      );
+      if (cursor != null && cursor.getCount() > 0) {
+        int randomIndex = new Random().nextInt(cursor.getCount());
+        cursor.moveToPosition(randomIndex);
+        long id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID));
+        Uri audioUri = ContentUris.withAppendedId(
+          MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id);
+        setAudio(audioUri);
+      } else {
+        stopSelf();
+      }
+    } catch (Exception e) {
+      stopSelf();
+    } finally {
+      if (cursor != null) cursor.close();
+    }
   }
 
   /**
