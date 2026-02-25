@@ -99,7 +99,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    service.onTrackCompleted();
   }
 
   /**
