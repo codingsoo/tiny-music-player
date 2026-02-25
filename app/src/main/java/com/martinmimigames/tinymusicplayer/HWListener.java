@@ -57,7 +57,7 @@ public class HWListener extends BroadcastReceiver {
       });
 
       playbackStateBuilder = new PlaybackState.Builder();
-      playbackStateBuilder.setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE);
+      playbackStateBuilder.setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT);
       mediaSession.setPlaybackState(playbackStateBuilder.build());
 
       mediaSession.setActive(true);
@@ -120,6 +120,10 @@ public class HWListener extends BroadcastReceiver {
           break;
         case KeyEvent.KEYCODE_MEDIA_STOP:
           intent.putExtra(Launcher.TYPE, Launcher.KILL);
+          break;
+        case KeyEvent.KEYCODE_MEDIA_NEXT:
+        case KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD:
+          intent.putExtra(Launcher.TYPE, Launcher.NEXT);
           break;
         default:
           return;

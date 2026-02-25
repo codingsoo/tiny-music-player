@@ -6,7 +6,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,6 +21,9 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+
+  boolean shuffling = false;
+  private Uri currentAudioLocation;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -55,10 +60,12 @@ public class Service extends android.app.Service {
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, shuffling);
+        case Launcher.PLAY -> setState(true, isLooping, shuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, shuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, shuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !shuffling);
+        case Launcher.NEXT -> playNextRandom();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -71,6 +78,7 @@ public class Service extends android.app.Service {
   }
 
   void setAudio(final Uri audioLocation) {
+    this.currentAudioLocation = audioLocation;
     try {
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
@@ -97,10 +105,79 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
     audioPlayer.setState(playing, looping);
     hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Called when a track finishes playing.
+   * If shuffling, plays the next random track; otherwise stops the service.
+   */
+  void onTrackCompleted() {
+    if (shuffling) {
+      playNextRandom();
+    } else {
+      stopSelf();
+    }
+  }
+
+  /**
+   * Play a random audio file from the same directory as the current track.
+   */
+  void playNextRandom() {
+    if (currentAudioLocation == null) {
+      stopSelf();
+      return;
+    }
+
+    var path = currentAudioLocation.getPath();
+    if (path == null) {
+      stopSelf();
+      return;
+    }
+
+    var currentFile = new File(path);
+    var parentDir = currentFile.getParentFile();
+    if (parentDir == null || !parentDir.isDirectory()) {
+      stopSelf();
+      return;
+    }
+
+    var audioFiles = parentDir.listFiles((dir, name) -> {
+      var lower = name.toLowerCase();
+      return lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".ogg")
+        || lower.endsWith(".flac") || lower.endsWith(".aac") || lower.endsWith(".m4a")
+        || lower.endsWith(".wma") || lower.endsWith(".opus") || lower.endsWith(".mid")
+        || lower.endsWith(".midi") || lower.endsWith(".amr") || lower.endsWith(".3gp")
+        || lower.endsWith(".mp4") || lower.endsWith(".mkv") || lower.endsWith(".webm");
+    });
+
+    if (audioFiles == null || audioFiles.length == 0) {
+      stopSelf();
+      return;
+    }
+
+    /* pick a random file, try to avoid the current one if there are multiple */
+    var random = new Random();
+    File nextFile;
+    if (audioFiles.length == 1) {
+      nextFile = audioFiles[0];
+    } else {
+      do {
+        nextFile = audioFiles[random.nextInt(audioFiles.length)];
+      } while (nextFile.equals(currentFile) && audioFiles.length > 1);
+    }
+
+    /* clean up current player */
+    if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+      audioPlayer.interrupt();
+    }
+
+    /* play the new file */
+    setAudio(Uri.fromFile(nextFile));
   }
 
   /**
