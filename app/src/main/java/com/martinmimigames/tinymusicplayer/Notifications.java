@@ -53,8 +53,11 @@ class Notifications {
    * @param title           title of notification (title of file)
    * @param playPauseIntent pending intent for pause/play audio
    * @param killIntent      pending intent for closing the service
+   * @param loopIntent      pending intent for toggling loop
+   * @param shuffleIntent   pending intent for toggling shuffle
+   * @param skipIntent      pending intent for skipping to next track
    */
-  void setupNotificationBuilder(String title, PendingIntent playPauseIntent, PendingIntent killIntent, PendingIntent loopIntent) {
+  void setupNotificationBuilder(String title, PendingIntent playPauseIntent, PendingIntent killIntent, PendingIntent loopIntent, PendingIntent shuffleIntent, PendingIntent skipIntent) {
     if (Build.VERSION.SDK_INT < 11) return;
 
     // create builder instance
@@ -75,6 +78,8 @@ class Notifications {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
       builder.setContentIntent(playPauseIntent);
       builder.addAction(0, "loop", loopIntent);
+      builder.addAction(0, "shuffle", shuffleIntent);
+      builder.addAction(0, "skip", skipIntent);
       builder.addAction(0, TAP_TO_CLOSE, killIntent);
     } else {
       builder.setContentText(TAP_TO_CLOSE);
@@ -85,13 +90,16 @@ class Notifications {
   /**
    * Switch playback state
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     // no notification controls < Jelly bean
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
       var playbackText = "Tap to ";
       playbackText += (playing) ? "pause" : "play";
       if (looping) {
         playbackText += " | looping";
+      }
+      if (shuffling) {
+        playbackText += " | shuffle";
       }
       builder.setContentText(playbackText);
       buildNotification();
@@ -175,12 +183,27 @@ class Notifications {
     var killIntent = genIntent(1, Launcher.KILL);
     var playPauseIntent = genIntent(2, Launcher.PLAY_PAUSE);
     var loopIntent = genIntent(3, Launcher.LOOP);
+    var shuffleIntent = genIntent(4, Launcher.SHUFFLE);
+    var skipIntent = genIntent(5, Launcher.SKIP);
 
-    setupNotificationBuilder(title, playPauseIntent, killIntent, loopIntent);
+    setupNotificationBuilder(title, playPauseIntent, killIntent, loopIntent, shuffleIntent, skipIntent);
     genNotification();
     setupNotification(title, killIntent);
 
     update();
+  }
+
+  /**
+   * Update the notification title (e.g., when skip changes the track).
+   *
+   * @param title the new title to display
+   */
+  void updateTitle(String title) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
+      builder.setContentTitle(title);
+      buildNotification();
+      update();
+    }
   }
 
   /**
