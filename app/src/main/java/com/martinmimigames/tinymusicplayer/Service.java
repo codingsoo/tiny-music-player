@@ -20,6 +20,16 @@ public class Service extends android.app.Service {
    */
   private AudioPlayer audioPlayer;
 
+  /**
+   * whether shuffle mode is enabled
+   */
+  private boolean shuffleEnabled;
+
+  /**
+   * the current audio file location
+   */
+  private Uri audioLocation;
+
   public Service() {
     hwListener = new HWListener(this);
     notifications = new Notifications(this);
@@ -55,10 +65,11 @@ public class Service extends android.app.Service {
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, shuffleEnabled);
+        case Launcher.PLAY -> setState(true, isLooping, shuffleEnabled);
+        case Launcher.PAUSE -> setState(false, isLooping, shuffleEnabled);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, shuffleEnabled);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !shuffleEnabled);
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -71,6 +82,7 @@ public class Service extends android.app.Service {
   }
 
   void setAudio(final Uri audioLocation) {
+    this.audioLocation = audioLocation;
     try {
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
@@ -97,10 +109,23 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffleEnabled = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * play a random sibling audio file for shuffle mode
+   */
+  void playNextShuffled() {
+    var nextUri = AudioFileHelper.getRandomSiblingAudio(audioLocation);
+    if (nextUri != null) {
+      setAudio(nextUri);
+    } else {
+      stopSelf();
+    }
   }
 
   /**
