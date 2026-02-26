@@ -57,7 +57,7 @@ public class HWListener extends BroadcastReceiver {
       });
 
       playbackStateBuilder = new PlaybackState.Builder();
-      playbackStateBuilder.setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE);
+      playbackStateBuilder.setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE | PlaybackState.ACTION_SKIP_TO_NEXT);
       mediaSession.setPlaybackState(playbackStateBuilder.build());
 
       mediaSession.setActive(true);
@@ -73,7 +73,7 @@ public class HWListener extends BroadcastReceiver {
   /**
    * Switch playback state, only useful when SDK_INT >= LOLLIPOP
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
       if (playing)
         playbackStateBuilder.setState(PlaybackState.STATE_PLAYING, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1);
@@ -120,6 +120,9 @@ public class HWListener extends BroadcastReceiver {
           break;
         case KeyEvent.KEYCODE_MEDIA_STOP:
           intent.putExtra(Launcher.TYPE, Launcher.KILL);
+          break;
+        case KeyEvent.KEYCODE_MEDIA_NEXT:
+          intent.putExtra(Launcher.TYPE, Launcher.SKIP);
           break;
         default:
           return;

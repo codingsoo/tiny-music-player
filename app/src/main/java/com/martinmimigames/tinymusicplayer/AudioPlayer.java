@@ -6,12 +6,23 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Random;
 
 class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
 
+  private static final String[] AUDIO_EXTENSIONS = {
+    "mp3", "wav", "ogg", "flac", "aac", "m4a", "wma", "opus", "mid", "midi", "amr", "3gp"
+  };
+
   private final Service service;
   private final MediaPlayer mediaPlayer;
+  private Uri currentUri;
+  private boolean shuffling;
 
   /**
    * Initiate an audio player, throws exceptions if failed.
@@ -25,6 +36,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   public AudioPlayer(Service service, Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     this.service = service;
+    this.currentUri = audioLocation;
     /* initiate new audio player */
     mediaPlayer = new MediaPlayer();
 
@@ -53,7 +65,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.setState(true, false, service.getShuffling());
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -80,18 +92,108 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
+   * check if shuffle mode is enabled
+   */
+  public boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
+   * get the current audio URI
+   */
+  public Uri getCurrentUri() {
+    return currentUri;
+  }
+
+  /**
    * set player state
    *
-   * @param playing is audio playing
-   * @param looping is audio looping
+   * @param playing   is audio playing
+   * @param looping   is audio looping
+   * @param shuffling is shuffle mode enabled
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     if (playing) {
       mediaPlayer.start();
     } else {
       mediaPlayer.pause();
     }
     mediaPlayer.setLooping(looping);
+    this.shuffling = shuffling;
+  }
+
+  /**
+   * Get sibling audio files in the same directory as the current track
+   */
+  private List<File> getSiblingAudioFiles() {
+    var path = currentUri.getPath();
+    if (path == null) return new ArrayList<>();
+
+    var currentFile = new File(path);
+    var parentDir = currentFile.getParentFile();
+    if (parentDir == null || !parentDir.isDirectory()) return new ArrayList<>();
+
+    var files = parentDir.listFiles();
+    if (files == null) return new ArrayList<>();
+
+    var siblings = new ArrayList<File>();
+    for (var file : files) {
+      if (!file.isFile()) continue;
+      if (file.getAbsolutePath().equals(currentFile.getAbsolutePath())) continue;
+
+      var name = file.getName().toLowerCase(Locale.ROOT);
+      var dotIndex = name.lastIndexOf('.');
+      if (dotIndex < 0) continue;
+      var ext = name.substring(dotIndex + 1);
+
+      for (var audioExt : AUDIO_EXTENSIONS) {
+        if (audioExt.equals(ext)) {
+          siblings.add(file);
+          break;
+        }
+      }
+    }
+    return siblings;
+  }
+
+  /**
+   * Play a random sibling audio file from the same directory
+   */
+  void playRandomSibling() {
+    try {
+      var siblings = getSiblingAudioFiles();
+      if (siblings.isEmpty()) {
+        service.stopSelf();
+        return;
+      }
+
+      var randomFile = siblings.get(new Random().nextInt(siblings.size()));
+      var newUri = Uri.fromFile(randomFile);
+
+      mediaPlayer.reset();
+      mediaPlayer.setDataSource(service, newUri);
+
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+        mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+      } else {
+        mediaPlayer.setAudioAttributes(
+          new AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .build()
+        );
+      }
+
+      mediaPlayer.setLooping(isLooping());
+      mediaPlayer.setOnCompletionListener(this);
+      mediaPlayer.prepare();
+      mediaPlayer.start();
+
+      currentUri = newUri;
+      service.onTrackChanged(newUri);
+    } catch (Exception e) {
+      service.stopSelf();
+    }
   }
 
   /**
@@ -99,7 +201,11 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    if (shuffling) {
+      playRandomSibling();
+    } else {
+      service.stopSelf();
+    }
   }
 
   /**
