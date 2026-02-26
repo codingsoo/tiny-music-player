@@ -19,6 +19,8 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  boolean shuffling = false;
+  private Uri currentAudioUri;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -55,10 +57,12 @@ public class Service extends android.app.Service {
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, shuffling);
+        case Launcher.PLAY -> setState(true, isLooping, shuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, shuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, shuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !shuffling);
+        case Launcher.SKIP_NEXT -> skipToNext();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -71,6 +75,7 @@ public class Service extends android.app.Service {
   }
 
   void setAudio(final Uri audioLocation) {
+    currentAudioUri = audioLocation;
     try {
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
@@ -97,10 +102,75 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Discover audio files in the same directory as the current file
+   * and return a random one (excluding the current file).
+   */
+  private Uri getRandomSiblingAudio() {
+    if (currentAudioUri == null) return null;
+
+    String path = currentAudioUri.getPath();
+    if (path == null) return null;
+
+    java.io.File currentFile = new java.io.File(path);
+    java.io.File parentDir = currentFile.getParentFile();
+    if (parentDir == null || !parentDir.isDirectory()) return null;
+
+    java.io.File[] files = parentDir.listFiles();
+    if (files == null) return null;
+
+    String[] audioExtensions = {".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma", ".opus", ".mid", ".midi", ".3gp", ".amr"};
+    java.util.ArrayList<java.io.File> audioFiles = new java.util.ArrayList<>();
+
+    for (java.io.File file : files) {
+      if (file.isFile() && !file.equals(currentFile)) {
+        String name = file.getName().toLowerCase();
+        for (String ext : audioExtensions) {
+          if (name.endsWith(ext)) {
+            audioFiles.add(file);
+            break;
+          }
+        }
+      }
+    }
+
+    if (audioFiles.isEmpty()) return null;
+
+    java.io.File randomFile = audioFiles.get(new java.util.Random().nextInt(audioFiles.size()));
+    return Uri.fromFile(randomFile);
+  }
+
+  /**
+   * Skip to next random audio file
+   */
+  void skipToNext() {
+    Uri nextAudio = getRandomSiblingAudio();
+    if (nextAudio != null) {
+      if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
+      setAudio(nextAudio);
+    } else {
+      Exceptions.throwError(this, "No other audio files found in directory");
+    }
+  }
+
+  /**
+   * Called when a track finishes playing
+   */
+  void onTrackCompleted() {
+    if (shuffling) {
+      skipToNext();
+    } else {
+      stopSelf();
+    }
   }
 
   /**
