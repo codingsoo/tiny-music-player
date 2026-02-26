@@ -6,7 +6,11 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,6 +23,14 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  private Uri currentAudioLocation;
+  private boolean shuffling = false;
+  private final Random random = new Random();
+
+  private static final String[] AUDIO_EXTENSIONS = {
+    "mp3", "wav", "ogg", "flac", "m4a", "aac", "wma", "opus",
+    "mid", "midi", "amr", "3gp", "3gpp"
+  };
 
   public Service() {
     hwListener = new HWListener(this);
@@ -55,10 +67,11 @@ public class Service extends android.app.Service {
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, shuffling);
+        case Launcher.PLAY -> setState(true, isLooping, shuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, shuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, shuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !shuffling);
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -72,6 +85,7 @@ public class Service extends android.app.Service {
 
   void setAudio(final Uri audioLocation) {
     try {
+      currentAudioLocation = audioLocation;
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
       audioPlayer.start();
@@ -97,10 +111,86 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * check if shuffle is enabled
+   */
+  boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
+   * called when a track finishes playing
+   */
+  void onTrackCompleted() {
+    if (shuffling) {
+      playRandomTrack();
+    } else {
+      stopSelf();
+    }
+  }
+
+  /**
+   * pick a random audio file from the same directory and play it
+   */
+  private void playRandomTrack() {
+    if (currentAudioLocation == null) {
+      stopSelf();
+      return;
+    }
+
+    var path = currentAudioLocation.getPath();
+    if (path == null) {
+      stopSelf();
+      return;
+    }
+
+    var currentFile = new File(path);
+    var parentDir = currentFile.getParentFile();
+    if (parentDir == null || !parentDir.isDirectory()) {
+      stopSelf();
+      return;
+    }
+
+    var files = parentDir.listFiles();
+    if (files == null) {
+      stopSelf();
+      return;
+    }
+
+    var candidates = new ArrayList<File>();
+    for (var file : files) {
+      if (!file.isFile()) continue;
+      if (file.equals(currentFile)) continue;
+      var name = file.getName();
+      var dotIndex = name.lastIndexOf('.');
+      if (dotIndex < 0) continue;
+      var ext = name.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+      var isAudio = false;
+      for (var audioExt : AUDIO_EXTENSIONS) {
+        if (audioExt.equals(ext)) {
+          isAudio = true;
+          break;
+        }
+      }
+      if (isAudio) {
+        candidates.add(file);
+      }
+    }
+
+    if (candidates.isEmpty()) {
+      stopSelf();
+      return;
+    }
+
+    var chosen = candidates.get(random.nextInt(candidates.size()));
+    setAudio(Uri.fromFile(chosen));
   }
 
   /**
