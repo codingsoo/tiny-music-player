@@ -1,41 +1,38 @@
 package com.martinmimigames.tinymusicplayer;
 
 import android.annotation.TargetApi;
+import android.content.ContentResolver;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.MediaStore;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Random;
 
-/**
- * service for playing music
- */
 public class Service extends android.app.Service {
 
   final HWListener hwListener;
   final Notifications notifications;
-  /**
-   * audio playing logic class
-   */
+  private final Random random;
   private AudioPlayer audioPlayer;
+  private boolean shuffleEnabled;
 
   public Service() {
     hwListener = new HWListener(this);
     notifications = new Notifications(this);
+    random = new Random();
+    shuffleEnabled = false;
   }
 
-  /**
-   * unused
-   */
   @Override
   public IBinder onBind(Intent intent) {
     return null;
   }
 
-  /**
-   * setup
-   */
   @Override
   public void onCreate() {
     hwListener.create();
@@ -44,22 +41,17 @@ public class Service extends android.app.Service {
     super.onCreate();
   }
 
-  /**
-   * startup logic
-   */
   @Override
   public void onStart(final Intent intent, final int startId) {
-    /* check if called from self */
     if (intent.getAction() == null) {
-      var isPLaying = audioPlayer.isPlaying();
+      var isPlaying = audioPlayer.isPlaying();
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
-        /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPlaying, isLooping);
         case Launcher.PLAY -> setState(true, isLooping);
         case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
-        /* cancel audio playback and kill service */
+        case Launcher.LOOP -> setState(isPlaying, !isLooping);
+        case Launcher.SHUFFLE -> toggleShuffle();
         case Launcher.KILL -> stopSelf();
       }
     } else {
@@ -70,16 +62,26 @@ public class Service extends android.app.Service {
     }
   }
 
+  void toggleShuffle() {
+    shuffleEnabled = !shuffleEnabled;
+    var isPlaying = audioPlayer.isPlaying();
+    var isLooping = audioPlayer.isLooping();
+    audioPlayer.setState(isPlaying, isLooping);
+    hwListener.setState(isPlaying, isLooping);
+    notifications.setState(isPlaying, isLooping, shuffleEnabled);
+  }
+
+  boolean isShuffleEnabled() {
+    return shuffleEnabled;
+  }
+
   void setAudio(final Uri audioLocation) {
     try {
-      /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
       audioPlayer.start();
 
-      /* create notification for playback control */
       notifications.getNotification(audioLocation);
 
-      /* start service as foreground */
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.ECLAIR)
         startForeground(Notifications.NOTIFICATION_ID, notifications.notification);
 
@@ -94,18 +96,54 @@ public class Service extends android.app.Service {
     }
   }
 
-  /**
-   * Switch to player component state
-   */
   void setState(boolean playing, boolean looping) {
     audioPlayer.setState(playing, looping);
     hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+    notifications.setState(playing, looping, shuffleEnabled);
   }
 
-  /**
-   * forward to startup logic for newer androids
-   */
+  void playNextShuffleTrack() {
+    Uri nextTrack = getRandomAudioUri();
+    if (nextTrack != null) {
+      if (!audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
+      setAudio(nextTrack);
+    } else {
+      stopSelf();
+    }
+  }
+
+  private Uri getRandomAudioUri() {
+    ArrayList<Uri> audioUris = new ArrayList<>();
+    ContentResolver contentResolver = getContentResolver();
+    Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+    String[] projection = {MediaStore.Audio.Media._ID};
+    String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
+
+    try {
+      Cursor cursor = contentResolver.query(collection, projection, selection, null, null);
+      if (cursor != null) {
+        int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+        while (cursor.moveToNext()) {
+          long id = cursor.getLong(idColumn);
+          Uri contentUri = Uri.withAppendedPath(collection, String.valueOf(id));
+          audioUris.add(contentUri);
+        }
+        cursor.close();
+      }
+    } catch (Exception e) {
+      return null;
+    }
+
+    if (audioUris.isEmpty()) {
+      return null;
+    }
+
+    int randomIndex = random.nextInt(audioUris.size());
+    return audioUris.get(randomIndex);
+  }
+
   @TargetApi(Build.VERSION_CODES.ECLAIR)
   @Override
   public int onStartCommand(final Intent intent, final int flags, final int startId) {
@@ -113,14 +151,10 @@ public class Service extends android.app.Service {
     return START_STICKY;
   }
 
-  /**
-   * service killing logic
-   */
   @Override
   public void onDestroy() {
     notifications.destroy();
     hwListener.destroy();
-    /* interrupt audio playback logic */
     if (!audioPlayer.isInterrupted()) audioPlayer.interrupt();
 
     super.onDestroy();

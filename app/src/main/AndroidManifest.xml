@@ -10,6 +10,7 @@
   <uses-permission
     a:name="android.permission.READ_EXTERNAL_STORAGE"
     tools:ignore="ScopedStorage" />
+  <uses-permission a:name="android.permission.READ_MEDIA_AUDIO" />
 
   <application
     a:icon="@drawable/ic_launcher"
