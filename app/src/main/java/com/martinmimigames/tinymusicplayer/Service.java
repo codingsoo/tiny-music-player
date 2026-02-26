@@ -6,7 +6,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,6 +22,8 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  private boolean shuffling = false;
+  private Uri currentAudioLocation;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -53,12 +58,15 @@ public class Service extends android.app.Service {
     if (intent.getAction() == null) {
       var isPLaying = audioPlayer.isPlaying();
       var isLooping = audioPlayer.isLooping();
+      var isShuffling = audioPlayer.isShuffling();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, isShuffling);
+        case Launcher.PLAY -> setState(true, isLooping, isShuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, isShuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, isShuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !isShuffling);
+        case Launcher.SKIP -> playNextShuffleTrack();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -72,6 +80,7 @@ public class Service extends android.app.Service {
 
   void setAudio(final Uri audioLocation) {
     try {
+      this.currentAudioLocation = audioLocation;
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
       audioPlayer.start();
@@ -97,10 +106,63 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Play a random audio file from the same directory as the current track
+   */
+  void playNextShuffleTrack() {
+    if (currentAudioLocation == null) {
+      stopSelf();
+      return;
+    }
+
+    var currentFile = new File(currentAudioLocation.getPath());
+    var parentDir = currentFile.getParentFile();
+
+    if (parentDir == null || !parentDir.exists()) {
+      stopSelf();
+      return;
+    }
+
+    var audioExtensions = Arrays.asList(
+      "mp3", "wav", "ogg", "flac", "m4a", "aac", "wma", "opus",
+      "mid", "midi", "amr", "3gp", "mp4", "mkv", "webm"
+    );
+
+    var audioFiles = parentDir.listFiles(file -> {
+      if (!file.isFile()) return false;
+      var name = file.getName().toLowerCase();
+      var dotIndex = name.lastIndexOf('.');
+      if (dotIndex < 0) return false;
+      var ext = name.substring(dotIndex + 1);
+      return audioExtensions.contains(ext);
+    });
+
+    if (audioFiles == null || audioFiles.length == 0) {
+      stopSelf();
+      return;
+    }
+
+    var random = new Random();
+    var nextFile = audioFiles[random.nextInt(audioFiles.length)];
+    var nextUri = Uri.fromFile(nextFile);
+
+    // Stop current playback
+    if (!audioPlayer.isInterrupted()) audioPlayer.interrupt();
+
+    // Remember shuffle state before setting new audio
+    var wasShuffling = shuffling;
+    setAudio(nextUri);
+    // Restore shuffle state after new audio is set up
+    if (wasShuffling && audioPlayer != null) {
+      setState(true, false, true);
+    }
   }
 
   /**
