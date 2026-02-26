@@ -6,7 +6,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,6 +21,8 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  private Uri audioLocation;
+  private boolean shuffling = false;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -53,12 +57,15 @@ public class Service extends android.app.Service {
     if (intent.getAction() == null) {
       var isPLaying = audioPlayer.isPlaying();
       var isLooping = audioPlayer.isLooping();
+      var isShuffling = shuffling;
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, isShuffling);
+        case Launcher.PLAY -> setState(true, isLooping, isShuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, isShuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, isShuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !isShuffling);
+        case Launcher.SKIP -> playNextRandom();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -71,6 +78,7 @@ public class Service extends android.app.Service {
   }
 
   void setAudio(final Uri audioLocation) {
+    this.audioLocation = audioLocation;
     try {
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
@@ -95,12 +103,54 @@ public class Service extends android.app.Service {
   }
 
   /**
+   * check if shuffle mode is enabled
+   */
+  boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * play a random audio file from the same directory
+   */
+  void playNextRandom() {
+    if (audioLocation == null) {
+      stopSelf();
+      return;
+    }
+    var currentFile = new File(audioLocation.getPath());
+    var parentDir = currentFile.getParentFile();
+    if (parentDir == null || !parentDir.isDirectory()) {
+      stopSelf();
+      return;
+    }
+    var audioFiles = parentDir.listFiles((dir, name) -> {
+      var lower = name.toLowerCase();
+      return lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".ogg")
+        || lower.endsWith(".flac") || lower.endsWith(".m4a") || lower.endsWith(".aac")
+        || lower.endsWith(".wma") || lower.endsWith(".opus") || lower.endsWith(".mid")
+        || lower.endsWith(".midi");
+    });
+    if (audioFiles == null || audioFiles.length == 0) {
+      stopSelf();
+      return;
+    }
+    var random = new Random();
+    var nextFile = audioFiles[random.nextInt(audioFiles.length)];
+    /* interrupt current player before starting new one */
+    if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+      audioPlayer.interrupt();
+    }
+    setAudio(Uri.fromFile(nextFile));
   }
 
   /**
