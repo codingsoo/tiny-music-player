@@ -26,6 +26,13 @@ public class Service extends android.app.Service {
   private boolean shuffleEnabled;
 
   /**
+   * check if shuffle mode is enabled
+   */
+  boolean isShuffleEnabled() {
+    return shuffleEnabled;
+  }
+
+  /**
    * the current audio file location
    */
   private Uri audioLocation;
