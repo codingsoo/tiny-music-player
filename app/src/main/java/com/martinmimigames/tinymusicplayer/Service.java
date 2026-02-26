@@ -30,6 +30,13 @@ public class Service extends android.app.Service {
   private boolean shuffling = false;
   private Uri currentAudioUri;
 
+  /**
+   * check if shuffle mode is enabled
+   */
+  boolean isShuffling() {
+    return shuffling;
+  }
+
   public Service() {
     hwListener = new HWListener(this);
     notifications = new Notifications(this);
@@ -174,9 +181,11 @@ public class Service extends android.app.Service {
         selected = audioFiles[0];
       } else {
         var random = new Random();
+        var attempts = 0;
         do {
           selected = audioFiles[random.nextInt(audioFiles.length)];
-        } while (selected.getAbsolutePath().equals(currentFile.getAbsolutePath()));
+          attempts++;
+        } while (selected.getAbsolutePath().equals(currentFile.getAbsolutePath()) && attempts < audioFiles.length * 2);
       }
 
       /* clean up current player before starting new track */
