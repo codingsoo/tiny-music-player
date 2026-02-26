@@ -6,12 +6,22 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 
+import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Locale;
+import java.util.Random;
 
 class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
 
+  private static final String[] AUDIO_EXTENSIONS = {
+    ".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma", ".opus", ".mid", ".midi"
+  };
+
   private final Service service;
   private final MediaPlayer mediaPlayer;
+  private final Uri audioLocation;
+  private boolean shuffling = false;
 
   /**
    * Initiate an audio player, throws exceptions if failed.
@@ -25,6 +35,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   public AudioPlayer(Service service, Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     this.service = service;
+    this.audioLocation = audioLocation;
     /* initiate new audio player */
     mediaPlayer = new MediaPlayer();
 
@@ -53,7 +64,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.setState(true, false, false);
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -80,18 +91,27 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
+   * check if shuffle mode is active
+   */
+  public boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
    * set player state
    *
-   * @param playing is audio playing
-   * @param looping is audio looping
+   * @param playing   is audio playing
+   * @param looping   is audio looping
+   * @param shuffling is shuffle mode active
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     if (playing) {
       mediaPlayer.start();
     } else {
       mediaPlayer.pause();
     }
     mediaPlayer.setLooping(looping);
+    this.shuffling = shuffling;
   }
 
   /**
@@ -99,6 +119,35 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
+    if (shuffling) {
+      try {
+        var dir = new File(audioLocation.getPath()).getParentFile();
+        if (dir != null && dir.isDirectory()) {
+          var files = dir.listFiles();
+          if (files != null) {
+            var audioFiles = new ArrayList<File>();
+            for (var file : files) {
+              if (!file.isFile()) continue;
+              var name = file.getName().toLowerCase(Locale.ROOT);
+              for (var ext : AUDIO_EXTENSIONS) {
+                if (name.endsWith(ext)) {
+                  audioFiles.add(file);
+                  break;
+                }
+              }
+            }
+            if (!audioFiles.isEmpty()) {
+              var random = new Random();
+              var picked = audioFiles.get(random.nextInt(audioFiles.size()));
+              service.setAudio(Uri.fromFile(picked));
+              return;
+            }
+          }
+        }
+      } catch (Exception e) {
+        /* fall through to stopSelf */
+      }
+    }
     service.stopSelf();
   }
 
