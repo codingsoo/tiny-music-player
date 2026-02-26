@@ -19,6 +19,7 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  private Uri currentAudioLocation;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -53,12 +54,15 @@ public class Service extends android.app.Service {
     if (intent.getAction() == null) {
       var isPLaying = audioPlayer.isPlaying();
       var isLooping = audioPlayer.isLooping();
+      var isShuffling = audioPlayer.isShuffling();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping, isShuffling);
+        case Launcher.PLAY -> setState(true, isLooping, isShuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, isShuffling);
+        case Launcher.LOOP -> setState(isPLaying, !isLooping, isShuffling);
+        case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !isShuffling);
+        case Launcher.SKIP -> skipToNext();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -72,6 +76,13 @@ public class Service extends android.app.Service {
 
   void setAudio(final Uri audioLocation) {
     try {
+      this.currentAudioLocation = audioLocation;
+
+      /* interrupt existing player if running */
+      if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
+
       /* get audio playback logic and start async */
       audioPlayer = new AudioPlayer(this, audioLocation);
       audioPlayer.start();
@@ -97,10 +108,30 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Play a random track from the same directory
+   */
+  void playNextShuffled() {
+    var scanner = new DirectoryScanner(currentAudioLocation);
+    var nextTrack = scanner.getRandomTrack();
+    if (nextTrack != null) {
+      setAudio(nextTrack);
+    } else {
+      stopSelf();
+    }
+  }
+
+  /**
+   * Skip to the next shuffled track
+   */
+  void skipToNext() {
+    playNextShuffled();
   }
 
   /**
