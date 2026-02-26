@@ -12,6 +12,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
 
   private final Service service;
   private final MediaPlayer mediaPlayer;
+  private boolean shuffling;
 
   /**
    * Initiate an audio player, throws exceptions if failed.
@@ -53,7 +54,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.setState(true, false, service.shuffling);
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -82,16 +83,18 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   /**
    * set player state
    *
-   * @param playing is audio playing
-   * @param looping is audio looping
+   * @param playing  is audio playing
+   * @param looping  is audio looping
+   * @param shuffling is shuffle mode active
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
     if (playing) {
       mediaPlayer.start();
     } else {
       mediaPlayer.pause();
     }
     mediaPlayer.setLooping(looping);
+    this.shuffling = shuffling;
   }
 
   /**
@@ -99,7 +102,11 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    if (shuffling) {
+      service.onTrackCompletion();
+    } else {
+      service.stopSelf();
+    }
   }
 
   /**
