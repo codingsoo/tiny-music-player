@@ -55,8 +55,9 @@ class Notifications {
    * @param killIntent      pending intent for closing the service
    * @param loopIntent      pending intent for toggling loop mode
    * @param shuffleIntent   pending intent for toggling shuffle mode
+   * @param skipNextIntent  pending intent for skipping to next track
    */
-  void setupNotificationBuilder(String title, PendingIntent playPauseIntent, PendingIntent killIntent, PendingIntent loopIntent, PendingIntent shuffleIntent) {
+  void setupNotificationBuilder(String title, PendingIntent playPauseIntent, PendingIntent killIntent, PendingIntent loopIntent, PendingIntent shuffleIntent, PendingIntent skipNextIntent) {
     if (Build.VERSION.SDK_INT < 11) return;
 
     // create builder instance
@@ -78,6 +79,7 @@ class Notifications {
       builder.setContentIntent(playPauseIntent);
       builder.addAction(0, "loop", loopIntent);
       builder.addAction(0, "shuffle", shuffleIntent);
+      builder.addAction(0, "next", skipNextIntent);
       builder.addAction(0, TAP_TO_CLOSE, killIntent);
     } else {
       builder.setContentText(TAP_TO_CLOSE);
@@ -97,7 +99,7 @@ class Notifications {
         playbackText += " | looping";
       }
       if (shuffling) {
-        playbackText += " | shuffle";
+        playbackText += " | shuffling";
       }
       builder.setContentText(playbackText);
       buildNotification();
@@ -182,8 +184,9 @@ class Notifications {
     var playPauseIntent = genIntent(2, Launcher.PLAY_PAUSE);
     var loopIntent = genIntent(3, Launcher.LOOP);
     var shuffleIntent = genIntent(4, Launcher.SHUFFLE);
+    var skipNextIntent = genIntent(5, Launcher.SKIP_NEXT);
 
-    setupNotificationBuilder(title, playPauseIntent, killIntent, loopIntent, shuffleIntent);
+    setupNotificationBuilder(title, playPauseIntent, killIntent, loopIntent, shuffleIntent, skipNextIntent);
     genNotification();
     setupNotification(title, killIntent);
 

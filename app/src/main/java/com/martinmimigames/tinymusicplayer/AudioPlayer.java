@@ -112,7 +112,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   @Override
   public void onCompletion(MediaPlayer mp) {
     if (shuffling) {
-      service.playRandomTrack();
+      service.playNextShuffledTrack();
     } else {
       service.stopSelf();
     }

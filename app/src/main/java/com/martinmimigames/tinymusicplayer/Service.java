@@ -20,12 +20,13 @@ public class Service extends android.app.Service {
 
   final HWListener hwListener;
   final Notifications notifications;
+  private final Random random;
   /**
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  private Uri currentAudioLocation;
   private boolean shuffling;
-  private final Random random;
 
   public Service() {
     hwListener = new HWListener(this);
@@ -68,7 +69,10 @@ public class Service extends android.app.Service {
         case Launcher.PLAY -> setState(true, isLooping, shuffling);
         case Launcher.PAUSE -> setState(false, isLooping, shuffling);
         case Launcher.LOOP -> setState(isPLaying, !isLooping, shuffling);
+        /* toggle shuffle mode */
         case Launcher.SHUFFLE -> setState(isPLaying, isLooping, !shuffling);
+        /* skip to next random track when shuffling */
+        case Launcher.SKIP_NEXT -> skipToNext();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -82,6 +86,8 @@ public class Service extends android.app.Service {
 
   void setAudio(final Uri audioLocation) {
     try {
+      currentAudioLocation = audioLocation;
+
       if (audioPlayer != null && !audioPlayer.isInterrupted()) {
         audioPlayer.interrupt();
       }
@@ -119,40 +125,51 @@ public class Service extends android.app.Service {
   }
 
   /**
-   * Select a random audio track from the device and start playing it
+   * skip to next random track if shuffle is enabled
    */
-  void playRandomTrack() {
-    Uri randomTrackUri = getRandomAudioUri();
+  void skipToNext() {
+    if (shuffling) {
+      playNextShuffledTrack();
+    }
+  }
+
+  /**
+   * play a random track from the device media library
+   */
+  void playNextShuffledTrack() {
+    var randomTrackUri = getRandomAudioUri();
     if (randomTrackUri != null) {
       setAudio(randomTrackUri);
-      setState(true, false, shuffling);
     } else {
       stopSelf();
     }
   }
 
   /**
-   * Query MediaStore for all music files and return a random one
+   * query the device media store for a random audio track
    */
   private Uri getRandomAudioUri() {
-    ArrayList<Uri> audioUris = new ArrayList<>();
+    var audioUris = new ArrayList<Uri>();
     ContentResolver contentResolver = getContentResolver();
-    Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
-    String[] projection = {MediaStore.Audio.Media._ID};
-    String selection = MediaStore.Audio.Media.IS_MUSIC + " != 0";
 
-    try (Cursor cursor = contentResolver.query(collection, projection, selection, null, null)) {
-      if (cursor != null) {
-        int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
-        while (cursor.moveToNext()) {
-          long id = cursor.getLong(idColumn);
-          Uri contentUri = Uri.withAppendedPath(
-            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
-          audioUris.add(contentUri);
-        }
+    try (Cursor cursor = contentResolver.query(
+      MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+      new String[]{MediaStore.Audio.Media._ID},
+      MediaStore.Audio.Media.IS_MUSIC + " != 0",
+      null,
+      null)) {
+
+      if (cursor != null && cursor.moveToFirst()) {
+        var idColumnIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+        do {
+          var audioId = cursor.getLong(idColumnIndex);
+          var audioUri = Uri.withAppendedPath(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            String.valueOf(audioId));
+          audioUris.add(audioUri);
+        } while (cursor.moveToNext());
       }
     } catch (Exception e) {
-      Exceptions.throwError(this, Exceptions.IO);
       return null;
     }
 
@@ -160,8 +177,12 @@ public class Service extends android.app.Service {
       return null;
     }
 
-    int randomIndex = random.nextInt(audioUris.size());
-    return audioUris.get(randomIndex);
+    /* pick a random track, avoiding the current one if possible */
+    if (audioUris.size() > 1 && currentAudioLocation != null) {
+      audioUris.remove(currentAudioLocation);
+    }
+
+    return audioUris.get(random.nextInt(audioUris.size()));
   }
 
   /**
