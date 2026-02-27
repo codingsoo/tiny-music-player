@@ -12,6 +12,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
 
   private final Service service;
   private final MediaPlayer mediaPlayer;
+  private boolean shuffling;
 
   /**
    * Initiate an audio player, throws exceptions if failed.
@@ -25,6 +26,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    */
   public AudioPlayer(Service service, Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     this.service = service;
+    this.shuffling = false;
     /* initiate new audio player */
     mediaPlayer = new MediaPlayer();
 
@@ -53,7 +55,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.setState(true, false);
+      service.onPlayerReady();
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -80,12 +82,21 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
+   * check if shuffle mode is active
+   */
+  public boolean isShuffling() {
+    return shuffling;
+  }
+
+  /**
    * set player state
    *
-   * @param playing is audio playing
-   * @param looping is audio looping
+   * @param playing   is audio playing
+   * @param looping   is audio looping
+   * @param shuffling is shuffle mode active
    */
-  void setState(boolean playing, boolean looping) {
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
     if (playing) {
       mediaPlayer.start();
     } else {
@@ -95,11 +106,11 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
-   * release resource when playback finished
+   * handle track completion - delegate to service for shuffle logic
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.stopSelf();
+    service.onTrackCompleted();
   }
 
   /**

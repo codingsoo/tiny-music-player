@@ -1,12 +1,17 @@
 package com.martinmimigames.tinymusicplayer;
 
 import android.annotation.TargetApi;
+import android.content.ContentResolver;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.MediaStore;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Random;
 
 /**
  * service for playing music
@@ -19,10 +24,14 @@ public class Service extends android.app.Service {
    * audio playing logic class
    */
   private AudioPlayer audioPlayer;
+  private boolean shuffling;
+  private final Random random;
 
   public Service() {
     hwListener = new HWListener(this);
     notifications = new Notifications(this);
+    random = new Random();
+    shuffling = false;
   }
 
   /**
@@ -51,14 +60,16 @@ public class Service extends android.app.Service {
   public void onStart(final Intent intent, final int startId) {
     /* check if called from self */
     if (intent.getAction() == null) {
-      var isPLaying = audioPlayer.isPlaying();
+      var isPlaying = audioPlayer.isPlaying();
       var isLooping = audioPlayer.isLooping();
       switch (intent.getByteExtra(Launcher.TYPE, Launcher.NULL)) {
         /* start or pause audio playback */
-        case Launcher.PLAY_PAUSE -> setState(!isPLaying, isLooping);
-        case Launcher.PLAY -> setState(true, isLooping);
-        case Launcher.PAUSE -> setState(false, isLooping);
-        case Launcher.LOOP -> setState(isPLaying, !isLooping);
+        case Launcher.PLAY_PAUSE -> setState(!isPlaying, isLooping, shuffling);
+        case Launcher.PLAY -> setState(true, isLooping, shuffling);
+        case Launcher.PAUSE -> setState(false, isLooping, shuffling);
+        case Launcher.LOOP -> setState(isPlaying, !isLooping, shuffling);
+        case Launcher.SHUFFLE -> setState(isPlaying, isLooping, !shuffling);
+        case Launcher.SKIP_NEXT -> skipToNext();
         /* cancel audio playback and kill service */
         case Launcher.KILL -> stopSelf();
       }
@@ -97,10 +108,83 @@ public class Service extends android.app.Service {
   /**
    * Switch to player component state
    */
-  void setState(boolean playing, boolean looping) {
-    audioPlayer.setState(playing, looping);
-    hwListener.setState(playing, looping);
-    notifications.setState(playing, looping);
+  void setState(boolean playing, boolean looping, boolean shuffling) {
+    this.shuffling = shuffling;
+    audioPlayer.setState(playing, looping, shuffling);
+    hwListener.setState(playing, looping, shuffling);
+    notifications.setState(playing, looping, shuffling);
+  }
+
+  /**
+   * Called by AudioPlayer when media is prepared and ready to play
+   */
+  void onPlayerReady() {
+    setState(true, false, shuffling);
+  }
+
+  /**
+   * Skip to the next random track when shuffle is active
+   */
+  void skipToNext() {
+    if (shuffling) {
+      playRandomTrack();
+    }
+  }
+
+  /**
+   * Called by AudioPlayer when the current track finishes playing
+   */
+  void onTrackCompleted() {
+    if (shuffling) {
+      playRandomTrack();
+    } else {
+      stopSelf();
+    }
+  }
+
+  /**
+   * Select and play a random audio track from the device
+   */
+  private void playRandomTrack() {
+    Uri randomTrackUri = getRandomAudioUri();
+    if (randomTrackUri != null) {
+      if (audioPlayer != null && !audioPlayer.isInterrupted()) {
+        audioPlayer.interrupt();
+      }
+      setAudio(randomTrackUri);
+    } else {
+      stopSelf();
+    }
+  }
+
+  /**
+   * Query MediaStore for all audio files and return a random one
+   */
+  private Uri getRandomAudioUri() {
+    ArrayList<Uri> audioUris = new ArrayList<>();
+    ContentResolver contentResolver = getContentResolver();
+    Uri collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+    String[] projection = {MediaStore.Audio.Media._ID};
+
+    try (Cursor cursor = contentResolver.query(collection, projection, null, null, null)) {
+      if (cursor != null) {
+        int idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID);
+        while (cursor.moveToNext()) {
+          long id = cursor.getLong(idColumn);
+          Uri contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, String.valueOf(id));
+          audioUris.add(contentUri);
+        }
+      }
+    } catch (Exception e) {
+      return null;
+    }
+
+    if (audioUris.isEmpty()) {
+      return null;
+    }
+
+    int randomIndex = random.nextInt(audioUris.size());
+    return audioUris.get(randomIndex);
   }
 
   /**
