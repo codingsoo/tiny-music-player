@@ -17,16 +17,17 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   /**
    * Initiate an audio player, throws exceptions if failed.
    *
-   * @param service       the service initialising this.
-   * @param audioLocation the Uri containing the location of the audio.
+   * @param service              the service initialising this.
+   * @param audioLocation        the Uri containing the location of the audio.
+   * @param initialShuffleState  whether shuffle mode is currently enabled.
    * @throws IllegalArgumentException when the media player need cookies, but we do not supply it.
    * @throws IllegalStateException    when the media player is not in the correct state.
    * @throws SecurityException        when the audio file is protected and cannot be played.
    * @throws IOException              when the audio file cannot be read.
    */
-  public AudioPlayer(Service service, Uri audioLocation) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
+  public AudioPlayer(Service service, Uri audioLocation, boolean initialShuffleState) throws IllegalArgumentException, IllegalStateException, SecurityException, IOException {
     this.service = service;
-    this.shuffling = false;
+    this.shuffling = initialShuffleState;
     /* initiate new audio player */
     mediaPlayer = new MediaPlayer();
 
@@ -55,7 +56,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
     /* get ready for playback */
     try {
       mediaPlayer.prepare();
-      service.onPlayerReady();
+      service.setState(true, false, shuffling);
     } catch (IllegalStateException e) {
       Exceptions.throwError(service, Exceptions.IllegalState);
     } catch (IOException e) {
@@ -82,7 +83,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
-   * check if shuffle mode is active
+   * check if shuffle mode is enabled
    */
   public boolean isShuffling() {
     return shuffling;
@@ -93,7 +94,7 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
    *
    * @param playing   is audio playing
    * @param looping   is audio looping
-   * @param shuffling is shuffle mode active
+   * @param shuffling is shuffle mode enabled
    */
   void setState(boolean playing, boolean looping, boolean shuffling) {
     this.shuffling = shuffling;
@@ -106,11 +107,15 @@ class AudioPlayer extends Thread implements MediaPlayer.OnCompletionListener {
   }
 
   /**
-   * handle track completion - delegate to service for shuffle logic
+   * handle playback completion: if shuffling, play next random track; otherwise stop
    */
   @Override
   public void onCompletion(MediaPlayer mp) {
-    service.onTrackCompleted();
+    if (shuffling) {
+      service.playRandomTrack();
+    } else {
+      service.stopSelf();
+    }
   }
 
   /**
