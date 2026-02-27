@@ -126,7 +126,6 @@ public class HWListener extends BroadcastReceiver {
           intent.putExtra(Launcher.TYPE, Launcher.KILL);
           break;
         case KeyEvent.KEYCODE_MEDIA_NEXT:
-        case KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD:
           intent.putExtra(Launcher.TYPE, Launcher.SKIP_NEXT);
           break;
         default:
